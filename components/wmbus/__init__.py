@@ -18,6 +18,7 @@ CONF_GDO0_PIN = "gdo0_pin"
 CONF_GDO2_PIN = "gdo2_pin"
 CONF_LOG_ALL = "log_all"
 CONF_SYNC_MODE = "sync_mode"
+CONF_RODATA_IN_FLASH = "rodata_in_flash"
 
 CODEOWNERS = ["@SzczepanLeon"]
 
@@ -38,6 +39,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_LOG_ALL, default=False): cv.boolean,
         cv.Optional(CONF_FREQUENCY, default=868.950): cv.float_range(min=300, max=928),
         cv.Optional(CONF_SYNC_MODE, default=False): cv.boolean,
+        cv.Optional(CONF_RODATA_IN_FLASH, default=True): cv.boolean,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -69,7 +71,7 @@ async def to_code(config):
     cg.add_platformio_option("build_src_filter", ["-<**/wmbus/driver_*.cpp>"])
     cg.add_platformio_option("build_src_filter", ["+<**/wmbus/driver_unknown.cpp>"])
 
-    if CORE.is_esp8266:
+    if CORE.is_esp8266 and config[CONF_RODATA_IN_FLASH]:
         # Move the wmbus .rodata (~30 KB of strings/tables) from DRAM to flash,
         # see rodata_to_flash.py.script. NON32XFER_HANDLER makes the Arduino core
         # emulate 8/16-bit reads from flash so that this is safe.

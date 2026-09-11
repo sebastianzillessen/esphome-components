@@ -79,6 +79,7 @@ sensor:
 - **frequency** (*Optional*): Rx frequency in MHz. Defaults to `868.950`.
 - **sync_mode** (*Optional*): Read a whole telegram inside one `loop()` call. Defaults to `false`.
 - **log_all** (*Optional*): Log every received telegram, not only configured meters. Defaults to `false`.
+- **rodata_in_flash** (*Optional*, ESP8266 only): Place the wmbus read-only data in flash (see above). Set to `false` to bisect boot problems; the build then needs ~30 KB more RAM. Defaults to `true`.
 
 ### `sensor` platform `wmbus`
 
