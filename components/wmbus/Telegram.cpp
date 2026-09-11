@@ -1212,7 +1212,7 @@ bool Telegram::parseELL(vector<uchar>::iterator& pos)
         has_target_mft_address = true;
         break;
     case CI_Field_Values::ELL_V:
-        ("ELL V not yet handled");
+        warning("(ELL) ELL V not yet handled");
         return false;
     }
 

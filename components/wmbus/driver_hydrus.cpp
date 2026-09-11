@@ -43,7 +43,7 @@ namespace
         di.setConstructor([](MeterInfo& mi, DriverInfo& di){ return shared_ptr<Meter>(new Driver(mi, di)); });
     });
 
-    Driver::Driver(MeterInfo &mi, DriverInfo &di) : MeterCommonImplementation(mi, di)
+    inline Driver::Driver(MeterInfo &mi, DriverInfo &di) : MeterCommonImplementation(mi, di)
     {
         addOptionalLibraryFields("operating_time_h,actuality_duration_s,meter_datetime,customer");
         addOptionalLibraryFields("flow_temperature_c,external_temperature_c");
