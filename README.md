@@ -1,262 +1,100 @@
-Version 5 based on Kuba's dirty [fork](https://github.com/IoTLabs-pl/esphome-components).
+# wM-Bus for ESP8266 + CC1101 (trimmed fork)
 
-# TODO:
-- Prepare packages for ready made boards (like UltimateReader) with displays, leds etc.
-- Aggresive cleanup of wmbusmeters classes/structs
-- Refactor traces/logs
+Stripped-down fork of the `wmbus` component from
+[SzczepanLeon/esphome-components](https://github.com/SzczepanLeon/esphome-components)
+branch `version_4`, cut down to what a single Diehl/Hydrometer **hydrus** water meter
+on a **Wemos D1 mini (ESP8266)** with a **CC1101** needs.
 
-# DONE:
-- Add configurable frequency for CC1101 (300–928 MHz, default 868.95 MHz)
-- Add CC1101 support with FIFO overflow handling and errata workaround
-- Add support for SX1262 (with limited frame length)
-- Reuse CRCs and frame parsers from wmbusmeters
-- Refactor 3out6 decoder
-- Migrate to esp-idf and drop Arduino!
-- Add support for SX1276
-- Run receiver in separate task
-- Drop all non wmbus related components from rf code part
-- Allow to specify ASCII decription key
-- Divide codebase to separate components (radio for radio communication, meter for meters (on which sensor may subscribe) and common for wmbusmeters code)
-- Add triggers:
-  - Radio->on packet (allow to blink on frame/telegram)
-  - Meter->on telegram (allow e.g. to send whole telegram to MQTT)
-- Re-pull of wmbusmeters code from upstream
-- Reimplement TCP and UCP senders. Should be classes with common interface to use as action under Radio->on packet trigger
-- Reimplement HEX and RTLWMBUS formatter to use as parameter of TCP/UDP action
+Upstream `version_4` refuses to build for ESP8266 (`#error`, see upstream issue #131)
+because the full build does not fit into the ESP8266's RAM. This fork removes the
+`#error` and everything that is not needed so that it does fit.
 
+## What was removed compared to upstream `version_4`
 
-# Usage example:
+- All meter drivers except `hydrus` (and the internal `unknown` fallback).
+- The 1334-entry manufacturer name table (it was built on the heap at boot).
+- MQTT (both ESPHome MQTT and the embedded PubSubClient), TCP/UDP "clients",
+  raw-frame forwarding, LED blinking, the `time` dependency, the `ethernet`
+  component, the `text_sensor` platform and the `all_drivers` option.
+- ESP32 specific code.
+
+The CC1101 receive loop and the wmbusmeters decoding core are unchanged.
+
+## What was added for the ESP8266
+
+On the ESP8266 every `const` table and string literal is linked into the 80 KB DRAM.
+Even after the trimming above the wmbusmeters core still carried about 30 KB of such
+data, leaving ~16 KB of heap. The component therefore
+
+- ships a small PlatformIO script (`rodata_to_flash.py.script`) that patches the
+  generated linker script so the `.rodata` of all `wmbus` object files goes to flash, and
+- sets `-DNON32XFER_HANDLER`, which makes the Arduino core emulate 8/16-bit reads from
+  flash (slower, but only telegram decoding is affected).
+
+Result for `wasserzaehler.yaml` (ESPHome 2026.6.5, Arduino core 3.1.2):
+
+| build                         | static RAM            |
+|-------------------------------|-----------------------|
+| trimmed, rodata in RAM        | 80.5 % (65984 bytes)  |
+| trimmed, rodata in flash      | 42.2 % (34580 bytes)  |
+
+## Usage
+
+See [`wasserzaehler.yaml`](wasserzaehler.yaml) for a full configuration and
+[`secrets.yaml.example`](secrets.yaml.example) for the secrets it expects.
+
 ```yaml
-esphome:
-  name: wmbus
-  friendly_name: WMBus
-  platformio_options:
-    upload_speed: 921600
-
 external_components:
-  - source: github://SzczepanLeon/esphome-components@main
+  - source: github://sebastianzillessen/esphome-components@main
+    components: [wmbus]
 
-esp32:
-  board: heltec_wifi_lora_32_V2
-  flash_size: 8MB
-  framework:
-    type: esp-idf
-  
-logger:
-  id: component_logger
-  level: DEBUG
-  baud_rate: 115200
-
-wifi:
-  networks:
-    - ssid: !secret wifi_ssid
-      password: !secret wifi_password
-
-api:
-
-web_server:
-  version: 3 
-
-time:
-  - platform: homeassistant
-
-spi:
-  clk_pin:
-    number: GPIO5
-    ignore_strapping_warning: true
-  mosi_pin: GPIO27
-  miso_pin: GPIO19
-
-socket_transmitter:
-  id: my_socket
-  ip_address: 192.168.1.1
-  port: 3333
-  protocol: TCP
-
-mqtt:
-  broker: test.mosquitto.org
-  port: 1883
-  client_id: some_client_id
-
-wmbus_radio:
-  radio_type: SX1276
-  cs_pin: GPIO18
-  reset_pin: GPIO14
-  irq_pin: GPIO35
-  on_frame:
-    - then:
-        - logger.log:
-            format: "RSSI: %ddBm T: %s (%d)"
-            args: [ frame->rssi(), frame->as_hex().c_str(), frame->data().size() ]
-    - then:
-        - repeat:
-            count: 3
-            then:
-              - output.turn_on: status_led
-              - delay: 100ms
-              - output.turn_off: status_led
-              - delay: 100ms
-    - mark_as_handled: True
-      then:
-        - mqtt.publish:
-            topic: wmbus-test/telegram_rtl
-            payload: !lambda return frame->as_rtlwmbus();
-    - mark_as_handled: True
-      then:
-        - socket_transmitter.send:
-            data: !lambda return frame->as_hex();
-
-wmbus_meter:
-  - id: electricity_meter
-    meter_id: 0x0101010101
-    type: amiplus
-    key: 00000000000000000000000000000000
-    mode: 
-      - T1
-      - C1
-  - id: heat_meter
-    meter_id: 12321
-    type: hydrocalm3
-    on_telegram:
-      then:
-        - wmbus_meter.send_telegram_with_mqtt:
-            topic: wmbus-test/telegram
-
-output:
-  - platform: gpio
-    id: vext_output
-    pin: GPIO21
-  - platform: gpio
-    id: oled_reset
-    pin: GPIO16
-    inverted: True
-  - platform: gpio
-    id: status_led
-    pin: GPIO25
+wmbus:
+  mosi_pin: GPIO13
+  miso_pin: GPIO12
+  clk_pin: GPIO14
+  cs_pin: GPIO15
+  gdo0_pin: GPIO5
+  gdo2_pin: GPIO4
+  frequency: 868.950
+  log_all: false
 
 sensor:
-  - platform: wmbus_meter
-    parent_id: heat_meter
-    field: total_heating_kwh
-    device_class: energy
-    name: Zużycie energii cieplnej
-    accuracy_decimals: 4
-    state_class: total_increasing
-
-  - platform: wmbus_meter
-    parent_id: electricity_meter
-    field: current_power_consumption_kw
-    name: Moc aktualna
-    accuracy_decimals: 0
-    device_class: power
-    unit_of_measurement: W
-    state_class: measurement
-    filters:
-      - multiply: 1000
-
-  - platform: wmbus_meter
-    parent_id: electricity_meter
-    field: total_energy_consumption_kwh
-    name: Zużycie energii
-    accuracy_decimals: 3
-    device_class: energy
-    state_class: total_increasing
-
-  - platform: wmbus_meter
-    parent_id: electricity_meter
-    field: rssi_dbm
-    name: Electricity Meter RSSI
-
-text_sensor:
-  - platform: wmbus_meter
-    parent_id: electricity_meter
-    field: timestamp
-    name: Electricity Meter timestamp
-
-  - platform: wmbus_meter
-    parent_id: electricity_meter
-    field: timestamp_zulu
-    name: Electricity Meter timestamp zulu
-
-  - platform: wmbus_meter
-    parent_id: electricity_meter
-    field: current_alarms
-    name: Electricity Meter alarms
+  - platform: wmbus
+    meter_id: 0x12345678
+    type: hydrus
+    key: "00000000000000000000000000000000"
+    sensors:
+      - name: "Water total"
+        field: "total"
+        unit_of_measurement: "m³"
+        accuracy_decimals: 3
+        device_class: water
+        state_class: total_increasing
 ```
 
-## Radio Configuration
+### `wmbus` options
 
-### CC1101
-For CC1101 radio, configure the SPI bus and specify the chip select and IRQ (GDO0) pins. The CC1101 has no hardware reset pin — it uses a software reset (SRES strobe) automatically. See [ESP32-C3_SuperMini_CC1101.yaml](ESP32-C3_SuperMini_CC1101.yaml) for a complete working example.
+- **mosi_pin / miso_pin / clk_pin / cs_pin** (*Optional*): CC1101 SPI pins.
+- **gdo0_pin / gdo2_pin** (*Optional*): CC1101 GDO0 / GDO2 pins.
+- **frequency** (*Optional*): Rx frequency in MHz. Defaults to `868.950`.
+- **sync_mode** (*Optional*): Read a whole telegram inside one `loop()` call. Defaults to `false`.
+- **log_all** (*Optional*): Log every received telegram, not only configured meters. Defaults to `false`.
+- **rodata_in_flash** (*Optional*, ESP8266 only): Place the wmbus read-only data in flash (see above). Set to `false` to bisect boot problems; the build then needs ~30 KB more RAM. Defaults to `true`.
 
-```yaml
-spi:
-  clk_pin: GPIO5
-  mosi_pin: GPIO6
-  miso_pin: GPIO7
+### `sensor` platform `wmbus`
 
-wmbus_radio:
-  radio_type: CC1101
-  cs_pin: GPIO4
-  irq_pin: GPIO3
-  frequency: 868.95MHz   # Optional. Range: 300–928 MHz. Default: 868.95 MHz
-```
+- **meter_id** (*Optional*): Meter ID (hex or decimal).
+- **type** (*Optional*): Driver name. Only `hydrus` ships in this fork; the driver decides
+  which link modes (T1/C1) it accepts, so there is no `mode:` option any more.
+- **key** (*Optional*): 32 hex characters AES key.
+- **sensors**: list of sensors with **field** (e.g. `total`, `rssi`, `flow`, `flow_temperature_c`)
+  and a mandatory **unit_of_measurement** (`m³`, `dBm`, ...).
 
-| Option | Required | Default | Description |
-|---|---|---|---|
-| `radio_type` | yes | — | Must be `CC1101` |
-| `cs_pin` | yes | — | SPI chip select pin |
-| `irq_pin` | yes | — | Interrupt pin (GDO0) |
-| `frequency` | no | `868.95MHz` | Operating frequency, 300–928 MHz |
+## Adding another driver
 
-Tested on ESP32-C3 Super Mini + CC1101 v2.0 (E07-M1101D-SMA) blue board.
+Copy the matching `driver_<name>.cpp` from upstream `version_4` into `components/wmbus/`
+and set `type: <name>` on the sensor. Only referenced drivers are compiled.
 
+## License
 
-Another tested device: NodeMCU-32S (ESP-32S) Development Board, ESP-WROOM-32, ESP32 Dev Board + CC1101:
-
-```yaml
-spi:
-  clk_pin: GPIO33
-  mosi_pin: GPIO32
-  miso_pin: GPIO19
-
-wmbus_radio:
-  radio_type: CC1101
-  cs_pin: GPIO23
-  irq_pin: GPIO22
-  frequency: 868.95MHz   # Optional. Range: 300–928 MHz. Default: 868.95 MHz
-```
-
-For full example see: [ESP32-NodeMcu-32s_CC1101.yaml](ESP32-NodeMcu-32s_CC1101.yaml)
-
-
-### SX1276
-For SX1276 radio you need to configure SPI instance as usual in ESPHome and additionally specify reset pin and IRQ pin (as DIO1). Interrupts are triggered on non empty FIFO.
-
-### SX1262
-For SX1262 radio, the configuration is similar but with additional options:
-
-```yaml
-wmbus_radio:
-  radio_type: SX1262
-  cs_pin: GPIO23
-  reset_pin: GPIO4
-  irq_pin: GPIO7
-  busy_pin: GPIO19           # Optional but recommended for proper timing
-  rx_gain: BOOSTED           # BOOSTED (default) or POWER_SAVING
-  rf_switch: false           # Set to true if DIO2 controls RF switch
-  has_tcxo: true             # By default, DIO3 controls an external TCXO
-```
-
-**SX1262-specific options:**
-- `busy_pin`: Optional GPIO for BUSY signal. Recommended for reliable operation.
-- `rx_gain`: RX gain mode - `BOOSTED` (better sensitivity, default) or `POWER_SAVING` (lower power)
-- `rf_switch`: Set to `true` if your board uses DIO2 to control the RF switch
-- `has_tcxo`: Set to `false` if your borad does not use DIO3 for control of an external TCXO
-
-Tested on M5Stack Stamp C6LoRa (ESP32-C6). 
-
-In order to pull latest wmbusmeters code run:
-```bash
-git subtree pull --prefix components/wmbus_common https://github.com/wmbusmeters/wmbusmeters.git <REF> --squash
-```
+GPL-3.0-or-later, same as upstream and wmbusmeters.

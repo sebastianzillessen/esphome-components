@@ -1,0 +1,113 @@
+substitutions:
+  name: wasserzaehler
+  friendly_name: "Wasserzähler"
+
+esphome:
+  name: ${name}
+  friendly_name: "${friendly_name}"
+  # dout flash mode: default (dio/qio) gibt Boot-Loop "Fatal exception(0) epc1=0x40100003"
+  platformio_options:
+    board_build.flash_mode: dout
+
+esp8266:
+  board: d1_mini
+
+logger:
+  level: INFO   # DEBUG/VERBOSE stört CC1101-Empfang auf ESP8266
+
+api:
+  # bewusst OHNE encryption → kein noise-c/libsodium (grösster RAM-Fresser)
+
+ota:
+  - platform: esphome
+    password: !secret ota_secret
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+  manual_ip:
+    static_ip: 192.168.1.11
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+    dns1: 192.168.1.1
+  # kein ap:-Fallback → kein DNSServer
+
+mdns:
+  disabled: true
+
+# bewusst weggelassen: web_server, captive_portal, time, wifi_info-Textsensoren
+
+# Abgespeckter Fork von SzczepanLeon/esphome-components@version_4:
+# nur CC1101 + hydrus-Treiber, ohne #error für ESP8266, ohne MQTT/TCP/UDP/LED/time.
+external_components:
+  - source: github://sebastianzillessen/esphome-components@main
+    refresh: 0d
+    components: [wmbus]
+
+wmbus:
+  mosi_pin: GPIO13   # D7 gelb
+  miso_pin: GPIO12   # D6 grün
+  clk_pin: GPIO14    # D5 orange
+  cs_pin: GPIO15     # D8 weiss
+  gdo0_pin: GPIO5    # D1 (nicht GPIO2: Boot-Strap-Pin, CC1101 zieht low → Crash-Loops)
+  gdo2_pin: GPIO4    # D2 blau
+  frequency: 868.950
+  log_all: false     # zum Debuggen auf true
+  # sync_mode: true  # ganzes Telegramm in einem loop() lesen; ausprobieren falls FIFO-Overflows
+
+debug:
+  update_interval: 60s
+
+sensor:
+  - platform: debug
+    free:
+      name: "${friendly_name} Heap frei"
+    fragmentation:
+      name: "${friendly_name} Heap Fragmentierung"
+
+  # T1 und C1 werden vom hydrus-Treiber selbst unterstützt (kein "mode:" mehr nötig)
+  - platform: wmbus
+    meter_id: 0x87092316
+    type: hydrus
+    key: !secret water_aes
+    sensors:
+      - name: "Wasser Zählerstand"
+        field: "total"
+        unit_of_measurement: "m³"
+        accuracy_decimals: 3
+        device_class: water
+        state_class: total_increasing
+        icon: "mdi:water"
+      - name: "Wasser Durchfluss"
+        field: "flow"
+        unit_of_measurement: "m³/h"
+        accuracy_decimals: 3
+        device_class: volume_flow_rate
+        state_class: measurement
+        icon: "mdi:waves-arrow-right"
+      - name: "Wasser Temperatur"
+        field: "flow_temperature_c"
+        unit_of_measurement: "°C"
+        accuracy_decimals: 1
+        device_class: temperature
+        state_class: measurement
+      - name: "Wasser RSSI"
+        field: "rssi"
+        unit_of_measurement: "dBm"
+        accuracy_decimals: 0
+        device_class: signal_strength
+        state_class: measurement
+        entity_category: diagnostic
+
+  - platform: uptime
+    name: "${friendly_name} Uptime"
+
+  - platform: wifi_signal
+    name: "${friendly_name} WiFi Signal"
+    device_class: signal_strength
+    update_interval: 60s
+
+button:
+  - platform: restart
+    name: "${friendly_name} Restart"
