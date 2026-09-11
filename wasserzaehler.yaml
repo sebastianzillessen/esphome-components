@@ -79,6 +79,19 @@ sensor:
         device_class: water
         state_class: total_increasing
         icon: "mdi:water"
+      - name: "Wasser Durchfluss"
+        field: "flow"
+        unit_of_measurement: "m³/h"
+        accuracy_decimals: 3
+        device_class: volume_flow_rate
+        state_class: measurement
+        icon: "mdi:waves-arrow-right"
+      - name: "Wasser Temperatur"
+        field: "flow_temperature_c"
+        unit_of_measurement: "°C"
+        accuracy_decimals: 1
+        device_class: temperature
+        state_class: measurement
       - name: "Wasser RSSI"
         field: "rssi"
         unit_of_measurement: "dBm"
