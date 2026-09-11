@@ -20,6 +20,24 @@ because the full build does not fit into the ESP8266's RAM. This fork removes th
 
 The CC1101 receive loop and the wmbusmeters decoding core are unchanged.
 
+## What was added for the ESP8266
+
+On the ESP8266 every `const` table and string literal is linked into the 80 KB DRAM.
+Even after the trimming above the wmbusmeters core still carried about 30 KB of such
+data, leaving ~16 KB of heap. The component therefore
+
+- ships a small PlatformIO script (`rodata_to_flash.py.script`) that patches the
+  generated linker script so the `.rodata` of all `wmbus` object files goes to flash, and
+- sets `-DNON32XFER_HANDLER`, which makes the Arduino core emulate 8/16-bit reads from
+  flash (slower, but only telegram decoding is affected).
+
+Result for `wasserzaehler.yaml` (ESPHome 2026.6.5, Arduino core 3.1.2):
+
+| build                         | static RAM            |
+|-------------------------------|-----------------------|
+| trimmed, rodata in RAM        | 80.5 % (65984 bytes)  |
+| trimmed, rodata in flash      | 42.2 % (34580 bytes)  |
+
 ## Usage
 
 See [`wasserzaehler.yaml`](wasserzaehler.yaml) for a full configuration and

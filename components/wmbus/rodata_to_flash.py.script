@@ -1,0 +1,41 @@
+# PlatformIO extra script (ESP8266 only), copied into the build dir by
+# components/wmbus/__init__.py and registered as "post:wmbus_rodata_to_flash.py".
+#
+# On the ESP8266 every .rodata section (string literals, const tables) is
+# linked into the 80 KB DRAM. The wmbusmeters core carries ~30 KB of such
+# data, which leaves no heap for WiFi + API. This script patches the
+# generated linker script so that the .rodata of all wmbus object files is
+# placed in flash (.irom0.text) instead. Byte/halfword reads from flash are
+# emulated by the Arduino core's exception handler, which the component
+# enables with -DNON32XFER_HANDLER.
+import os
+
+Import("env")
+
+MARKER = "*(.ver_number)"
+PATCH = (
+    MARKER
+    + "\n    /* wmbus rodata: keep wmbusmeters read-only data in flash */"
+    + "\n    */wmbus/*.o(.rodata .rodata.*)"
+)
+
+
+def patch_ld(source, target, env):
+    ld = os.path.join(env.subst("$BUILD_DIR"), "ld", "local.eagle.app.v6.common.ld")
+    if not os.path.isfile(ld):
+        print("wmbus: %s not found, rodata stays in RAM" % ld)
+        return
+    with open(ld, "r") as f:
+        content = f.read()
+    if "wmbus rodata" in content:
+        return
+    if MARKER not in content:
+        print("wmbus: linker script marker not found, rodata stays in RAM")
+        return
+    content = content.replace(MARKER, PATCH, 1)
+    with open(ld, "w") as f:
+        f.write(content)
+    print("wmbus: moved wmbus .rodata to flash in %s" % ld)
+
+
+env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", patch_ld)

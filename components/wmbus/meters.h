@@ -419,6 +419,7 @@ shared_ptr<Meter> createMeter(MeterInfo* mi);
 const char* availableMeterTypes();
 string decodeTPLStatusByteWithMfct(uchar sts, Translate::Lookup& lookup);
 bool lookupDriverInfo(const string& driver_name, DriverInfo* out_di);
+void verifyDriverLookupCreated();
 DriverInfo* lookupDriver(string name);
 bool isValidLinkModes(string modes);
 

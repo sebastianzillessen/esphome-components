@@ -1,6 +1,10 @@
+from pathlib import Path
+
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins
+from esphome.core import CORE
+from esphome.helpers import copy_file_if_changed
 from esphome.const import (
     CONF_ID,
     CONF_MOSI_PIN,
@@ -64,3 +68,14 @@ async def to_code(config):
     cg.add_platformio_option("build_src_filter", ["+<*>", "-<.git/>", "-<.svn/>"])
     cg.add_platformio_option("build_src_filter", ["-<**/wmbus/driver_*.cpp>"])
     cg.add_platformio_option("build_src_filter", ["+<**/wmbus/driver_unknown.cpp>"])
+
+    if CORE.is_esp8266:
+        # Move the wmbus .rodata (~30 KB of strings/tables) from DRAM to flash,
+        # see rodata_to_flash.py.script. NON32XFER_HANDLER makes the Arduino core
+        # emulate 8/16-bit reads from flash so that this is safe.
+        cg.add_build_flag("-DNON32XFER_HANDLER")
+        copy_file_if_changed(
+            Path(__file__).parent / "rodata_to_flash.py.script",
+            CORE.relative_build_path("wmbus_rodata_to_flash.py"),
+        )
+        cg.add_platformio_option("extra_scripts", ["post:wmbus_rodata_to_flash.py"])
